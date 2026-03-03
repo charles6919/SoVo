@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SoVo Voice Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+      color: #a0a0ff;
+    }
+    
+    .status-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      width: 100%;
+      max-width: 500px;
+      margin-bottom: 30px;
+    }
+    
+    .status-card {
+      background: rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 15px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+    }
+    
+    .status-card .icon { font-size: 2rem; margin-bottom: 8px; }
+    .status-card .label { font-size: 0.85rem; color: #aaa; }
+    .status-card .value { font-size: 1.1rem; font-weight: 600; margin-top: 4px; }
+    .status-card .value.on { color: #4ade80; }
+    .status-card .value.off { color: #f87171; }
+    
+    .voice-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    #recordBtn {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      border: none;
+      background: linear-gradient(145deg, #4f46e5, #7c3aed);
+      color: white;
+      font-size: 2.5rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    #recordBtn:hover { transform: scale(1.05); }
+    #recordBtn.recording {
+      background: linear-gradient(145deg, #dc2626, #ef4444);
+      animation: pulse 1.5s infinite;
+      box-shadow: 0 4px 30px rgba(239, 68, 68, 0.6);
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.08); }
+    }
+    
+    #status {
+      margin-top: 15px;
+      font-size: 0.95rem;
+      color: #a0a0a0;
+      min-height: 24px;
+    }
+    
+    #transcript {
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      padding: 15px;
+      width: 100%;
+      max-width: 500px;
+      min-height: 60px;
+      margin-top: 10px;
+      font-size: 1rem;
+      color: #e0e0e0;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .quick-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 20px;
+      max-width: 500px;
+    }
+    
+    .quick-btn {
+      padding: 10px 16px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .quick-btn:hover {
+      background: rgba(255,255,255,0.2);
+      border-color: rgba(255,255,255,0.4);
+    }
+    
+    .error { color: #f87171; }
+    .success { color: #4ade80; }
+  </style>
+</head>
+<body>
+  <h1>🎤 SoVo Voice Dashboard</h1>
+  
+  <div class="status-panel">
+    <div class="status-card" id="card-caribbean">
+      <div class="icon">❄️</div>
+      <div class="label">캐리비안 에어컨</div>
+      <div class="value" id="status-caribbean">--</div>
+    </div>
+    <div class="status-card" id="card-santorino">
+      <div class="icon">❄️</div>
+      <div class="label">산토리노 에어컨</div>
+      <div class="value" id="status-santorino">--</div>
+    </div>
+    <div class="status-card" id="card-601">
+      <div class="icon">💡</div>
+      <div class="label">601 입구</div>
+      <div class="value" id="status-601">--</div>
+    </div>
+  </div>
+  
+  <div class="voice-section">
+    <button id="recordBtn">🎙️</button>
+    <div id="status">버튼을 눌러 음성 명령</div>
+    <div id="transcript"></div>
+  </div>
+  
+  <div class="quick-actions">
+    <button class="quick-btn" onclick="sendCommand('601 불 켜줘')">💡 601 켜기</button>
+    <button class="quick-btn" onclick="sendCommand('601 불 꺼줘')">💡 601 끄기</button>
+    <button class="quick-btn" onclick="sendCommand('캐리비안 에어컨 켜줘')">❄️ 캐리비안 ON</button>
+    <button class="quick-btn" onclick="sendCommand('산토리노 에어컨 켜줘')">❄️ 산토리노 ON</button>
+    <button class="quick-btn" onclick="refreshStatus()">🔄 새로고침</button>
+  </div>
+
+  <script>
+    const API_BASE = 'http://192.168.0.54:7777';
+    
+    // Status refresh
+    async function refreshStatus() {
+      try {
+        const [caribbean, santorino, light601] = await Promise.all([
+          fetch(`${API_BASE}/api/ac/caribbean/power`).then(r => r.json()),
+          fetch(`${API_BASE}/api/ac/santorino/power`).then(r => r.json()),
+          fetch(`${API_BASE}/api/ltg/601-entry/power`).then(r => r.json())
+        ]);
+        
+        updateStatus('caribbean', caribbean.status);
+        updateStatus('santorino', santorino.status);
+        updateStatus('601', light601.status);
+      } catch (e) {
+        console.error('Status fetch error:', e);
+      }
+    }
+    
+    function updateStatus(id, isOn) {
+      const el = document.getElementById(`status-${id}`);
+      el.textContent = isOn ? 'ON' : 'OFF';
+      el.className = 'value ' + (isOn ? 'on' : 'off');
+    }
+    
+    // Voice recognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let isRecording = false;
+    
+    const recordBtn = document.getElementById('recordBtn');
+    const statusEl = document.getElementById('status');
+    const transcriptEl = document.getElementById('transcript');
+    
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.lang = 'ko-KR';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      
+      recognition.onstart = () => {
+        isRecording = true;
+        recordBtn.classList.add('recording');
+        recordBtn.textContent = '⏹️';
+        statusEl.textContent = '듣고 있어요...';
+        transcriptEl.textContent = '';
+      };
+      
+      recognition.onresult = (event) => {
+        let interim = '';
+        let final = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            final += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+        
+        transcriptEl.textContent = final || interim;
+        
+        if (final) {
+          sendCommand(final);
+        }
+      };
+      
+      recognition.onerror = (event) => {
+        console.error('Speech error:', event.error);
+        statusEl.textContent = '오류: ' + event.error;
+        statusEl.className = 'error';
+        stopRecording();
+      };
+      
+      recognition.onend = () => {
+        stopRecording();
+      };
+    } else {
+      statusEl.textContent = '이 브라우저는 음성인식을 지원하지 않아요';
+      statusEl.className = 'error';
+      recordBtn.disabled = true;
+    }
+    
+    function stopRecording() {
+      isRecording = false;
+      recordBtn.classList.remove('recording');
+      recordBtn.textContent = '🎙️';
+      if (statusEl.className !== 'error') {
+        statusEl.textContent = '버튼을 눌러 음성 명령';
+        statusEl.className = '';
+      }
+    }
+    
+    recordBtn.addEventListener('click', () => {
+      if (!recognition) return;
+      
+      if (isRecording) {
+        recognition.stop();
+      } else {
+        recognition.start();
+      }
+    });
+    
+    // Command processing
+    async function sendCommand(text) {
+      statusEl.textContent = `처리 중: "${text}"`;
+      statusEl.className = '';
+      
+      const cmd = text.toLowerCase();
+      let endpoint = null;
+      let action = null;
+      
+      // Parse command
+      if (cmd.includes('601') || cmd.includes('입구') || cmd.includes('불')) {
+        endpoint = '/api/ltg/601-entry/power';
+        if (cmd.includes('켜') || cmd.includes('on')) action = 'on';
+        else if (cmd.includes('꺼') || cmd.includes('off')) action = 'off';
+      } else if (cmd.includes('캐리비안') || cmd.includes('caribbean')) {
+        endpoint = '/api/ac/caribbean/power';
+        if (cmd.includes('켜') || cmd.includes('on')) action = 'on';
+        else if (cmd.includes('꺼') || cmd.includes('off')) action = 'off';
+      } else if (cmd.includes('산토리노') || cmd.includes('santorino')) {
+        endpoint = '/api/ac/santorino/power';
+        if (cmd.includes('켜') || cmd.includes('on')) action = 'on';
+        else if (cmd.includes('꺼') || cmd.includes('off')) action = 'off';
+      }
+      
+      if (endpoint && action) {
+        try {
+          const res = await fetch(`${API_BASE}${endpoint}/${action}`, { method: 'POST' });
+          const data = await res.json();
+          
+          if (data.result) {
+            statusEl.textContent = '✓ 완료!';
+            statusEl.className = 'success';
+            setTimeout(refreshStatus, 500);
+          } else {
+            statusEl.textContent = '실패: ' + (data.msg || '알 수 없는 오류');
+            statusEl.className = 'error';
+          }
+        } catch (e) {
+          statusEl.textContent = '연결 오류';
+          statusEl.className = 'error';
+        }
+      } else {
+        statusEl.textContent = '명령을 이해하지 못했어요';
+        statusEl.className = 'error';
+      }
+      
+      setTimeout(() => {
+        statusEl.textContent = '버튼을 눌러 음성 명령';
+        statusEl.className = '';
+      }, 3000);
+    }
+    
+    // Initial load
+    refreshStatus();
+    setInterval(refreshStatus, 30000);
+  </script>
+</body>
+</html>

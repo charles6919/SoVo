@@ -1,0 +1,23 @@
+# Secrets and credentials
+*.key
+*.pem
+*.env
+.env*
+secrets/
+credentials/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+*.swp
+*~
+
+# Node modules (if any)
+node_modules/
