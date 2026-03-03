@@ -102,6 +102,43 @@
       border: 1px solid rgba(255,255,255,0.1);
     }
     
+    #response {
+      background: rgba(74, 222, 128, 0.1);
+      border-radius: 12px;
+      padding: 15px;
+      width: 100%;
+      max-width: 500px;
+      min-height: 40px;
+      margin-top: 10px;
+      font-size: 1rem;
+      color: #4ade80;
+      border: 1px solid rgba(74, 222, 128, 0.2);
+      display: none;
+    }
+    
+    #response.visible { display: block; }
+    #response.speaking { animation: speaking 0.5s ease infinite alternate; }
+    
+    @keyframes speaking {
+      0% { border-color: rgba(74, 222, 128, 0.2); }
+      100% { border-color: rgba(74, 222, 128, 0.6); }
+    }
+    
+    .tts-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 15px;
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+    
+    .tts-toggle input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+    }
+    
     .quick-actions {
       display: flex;
       gap: 10px;
@@ -156,6 +193,11 @@
     <button id="recordBtn">🎙️</button>
     <div id="status">버튼을 눌러 음성 명령</div>
     <div id="transcript"></div>
+    <div id="response"></div>
+    <label class="tts-toggle">
+      <input type="checkbox" id="ttsEnabled" checked>
+      🔊 음성 응답
+    </label>
   </div>
   
   <div class="quick-actions">
@@ -200,6 +242,58 @@
     const recordBtn = document.getElementById('recordBtn');
     const statusEl = document.getElementById('status');
     const transcriptEl = document.getElementById('transcript');
+    const responseEl = document.getElementById('response');
+    const ttsEnabledEl = document.getElementById('ttsEnabled');
+    
+    // TTS (Text-to-Speech)
+    const synth = window.speechSynthesis;
+    let koreanVoice = null;
+    
+    // 한국어 음성 찾기
+    function loadVoices() {
+      const voices = synth.getVoices();
+      koreanVoice = voices.find(v => v.lang.startsWith('ko')) || voices[0];
+    }
+    
+    if (synth.onvoiceschanged !== undefined) {
+      synth.onvoiceschanged = loadVoices;
+    }
+    loadVoices();
+    
+    function speak(text) {
+      if (!ttsEnabledEl.checked || !synth) return;
+      
+      // 이전 음성 중단
+      synth.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ko-KR';
+      utterance.rate = 1.1;
+      utterance.pitch = 1.0;
+      if (koreanVoice) utterance.voice = koreanVoice;
+      
+      responseEl.classList.add('speaking');
+      utterance.onend = () => responseEl.classList.remove('speaking');
+      utterance.onerror = () => responseEl.classList.remove('speaking');
+      
+      synth.speak(utterance);
+    }
+    
+    function showResponse(text) {
+      responseEl.textContent = '🗣️ ' + text;
+      responseEl.classList.add('visible');
+      speak(text);
+    }
+    
+    function hideResponse() {
+      responseEl.classList.remove('visible', 'speaking');
+    }
+    
+    // HTTPS 체크 (모바일은 HTTPS 필수)
+    const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (!isSecure) {
+      console.warn('⚠️ HTTP 연결 - 모바일에서 마이크가 작동하지 않을 수 있어요');
+    }
     
     if (SpeechRecognition) {
       recognition = new SpeechRecognition();
@@ -251,6 +345,13 @@
       recordBtn.disabled = true;
     }
     
+    // 모바일 + HTTP 감지 시 경고
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile && !isSecure) {
+      statusEl.innerHTML = '⚠️ HTTPS 필요 - 모바일 마이크 사용 불가<br><small>PC에서 이용하거나 HTTPS로 접속하세요</small>';
+      statusEl.className = 'error';
+    }
+    
     function stopRecording() {
       isRecording = false;
       recordBtn.classList.remove('recording');
@@ -261,41 +362,74 @@
       }
     }
     
-    recordBtn.addEventListener('click', () => {
-      if (!recognition) return;
+    function toggleRecording() {
+      if (!recognition) {
+        console.error('Speech recognition not available');
+        statusEl.textContent = '음성인식을 사용할 수 없어요';
+        statusEl.className = 'error';
+        return;
+      }
       
       if (isRecording) {
         recognition.stop();
       } else {
-        recognition.start();
+        try {
+          recognition.start();
+          console.log('Recognition started');
+        } catch (e) {
+          console.error('Recognition start error:', e);
+          statusEl.textContent = '마이크 시작 오류: ' + e.message;
+          statusEl.className = 'error';
+        }
       }
+    }
+    
+    // PC와 모바일 모두 지원
+    recordBtn.addEventListener('click', toggleRecording);
+    recordBtn.addEventListener('touchend', (e) => {
+      e.preventDefault(); // 중복 이벤트 방지
+      toggleRecording();
     });
     
     // Command processing
     async function sendCommand(text) {
       statusEl.textContent = `처리 중: "${text}"`;
       statusEl.className = '';
+      hideResponse();
       
       const cmd = text.toLowerCase();
       let endpoint = null;
       let action = null;
+      let deviceName = '';
+      let actionName = '';
       
       // Parse command
-      if (cmd.includes('601') || cmd.includes('입구') || cmd.includes('불')) {
+      if (cmd.includes('601') || cmd.includes('입구')) {
         endpoint = '/api/ltg/601-entry/power';
-        if (cmd.includes('켜') || cmd.includes('on')) action = 'on';
-        else if (cmd.includes('꺼') || cmd.includes('off')) action = 'off';
+        deviceName = '601호 불';
+        if (cmd.includes('켜') || cmd.includes('on')) { action = 'on'; actionName = '켜'; }
+        else if (cmd.includes('꺼') || cmd.includes('off')) { action = 'off'; actionName = '끄'; }
+      } else if (cmd.includes('불') && !cmd.includes('캐리비안') && !cmd.includes('산토리노')) {
+        endpoint = '/api/ltg/601-entry/power';
+        deviceName = '601호 불';
+        if (cmd.includes('켜') || cmd.includes('on')) { action = 'on'; actionName = '켜'; }
+        else if (cmd.includes('꺼') || cmd.includes('off')) { action = 'off'; actionName = '끄'; }
       } else if (cmd.includes('캐리비안') || cmd.includes('caribbean')) {
         endpoint = '/api/ac/caribbean/power';
-        if (cmd.includes('켜') || cmd.includes('on')) action = 'on';
-        else if (cmd.includes('꺼') || cmd.includes('off')) action = 'off';
+        deviceName = '캐리비안 에어컨';
+        if (cmd.includes('켜') || cmd.includes('on')) { action = 'on'; actionName = '켜'; }
+        else if (cmd.includes('꺼') || cmd.includes('off')) { action = 'off'; actionName = '끄'; }
       } else if (cmd.includes('산토리노') || cmd.includes('santorino')) {
         endpoint = '/api/ac/santorino/power';
-        if (cmd.includes('켜') || cmd.includes('on')) action = 'on';
-        else if (cmd.includes('꺼') || cmd.includes('off')) action = 'off';
+        deviceName = '산토리노 에어컨';
+        if (cmd.includes('켜') || cmd.includes('on')) { action = 'on'; actionName = '켜'; }
+        else if (cmd.includes('꺼') || cmd.includes('off')) { action = 'off'; actionName = '끄'; }
       }
       
       if (endpoint && action) {
+        // 먼저 응답 (명령 인식 알림)
+        showResponse(`네, ${deviceName} ${actionName}겠습니다.`);
+        
         try {
           const res = await fetch(`${API_BASE}${endpoint}/${action}`, { method: 'POST' });
           const data = await res.json();
@@ -307,20 +441,24 @@
           } else {
             statusEl.textContent = '실패: ' + (data.msg || '알 수 없는 오류');
             statusEl.className = 'error';
+            showResponse(`죄송해요, ${deviceName} 제어에 실패했어요.`);
           }
         } catch (e) {
           statusEl.textContent = '연결 오류';
           statusEl.className = 'error';
+          showResponse('연결에 문제가 있어요. 다시 시도해 주세요.');
         }
       } else {
         statusEl.textContent = '명령을 이해하지 못했어요';
         statusEl.className = 'error';
+        showResponse('죄송해요, 무슨 말씀인지 잘 모르겠어요.');
       }
       
       setTimeout(() => {
         statusEl.textContent = '버튼을 눌러 음성 명령';
         statusEl.className = '';
-      }, 3000);
+        hideResponse();
+      }, 5000);
     }
     
     // Initial load
