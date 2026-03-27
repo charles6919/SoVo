@@ -166,6 +166,20 @@
     
     .error { color: #f87171; }
     .success { color: #4ade80; }
+    
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -175,17 +189,17 @@
     <div class="status-card" id="card-caribbean">
       <div class="icon">❄️</div>
       <div class="label">캐리비안 에어컨</div>
-      <div class="value" id="status-caribbean">--</div>
+      <div class="value" id="status-caribbean"><div class="spinner"></div></div>
     </div>
     <div class="status-card" id="card-santorino">
       <div class="icon">❄️</div>
       <div class="label">산토리노 에어컨</div>
-      <div class="value" id="status-santorino">--</div>
+      <div class="value" id="status-santorino"><div class="spinner"></div></div>
     </div>
     <div class="status-card" id="card-601">
       <div class="icon">💡</div>
       <div class="label">601 입구</div>
-      <div class="value" id="status-601">--</div>
+      <div class="value" id="status-601"><div class="spinner"></div></div>
     </div>
   </div>
   
@@ -204,7 +218,9 @@
     <button class="quick-btn" onclick="sendCommand('601 불 켜줘')">💡 601 켜기</button>
     <button class="quick-btn" onclick="sendCommand('601 불 꺼줘')">💡 601 끄기</button>
     <button class="quick-btn" onclick="sendCommand('캐리비안 에어컨 켜줘')">❄️ 캐리비안 ON</button>
+    <button class="quick-btn" onclick="sendCommand('캐리비안 에어컨 꺼줘')">❄️ 캐리비안 OFF</button>
     <button class="quick-btn" onclick="sendCommand('산토리노 에어컨 켜줘')">❄️ 산토리노 ON</button>
+    <button class="quick-btn" onclick="sendCommand('산토리노 에어컨 꺼줘')">❄️ 산토리노 OFF</button>
     <button class="quick-btn" onclick="refreshStatus()">🔄 새로고침</button>
   </div>
 
@@ -213,6 +229,12 @@
     
     // Status refresh
     async function refreshStatus() {
+      ['caribbean', 'santorino', '601'].forEach(id => {
+        const el = document.getElementById(`status-${id}`);
+        el.innerHTML = '<div class="spinner"></div>';
+        el.className = 'value';
+      });
+      
       try {
         const [caribbean, santorino, light601] = await Promise.all([
           fetch(`${API_BASE}/api/ac/caribbean/power`).then(r => r.json()),
@@ -225,6 +247,11 @@
         updateStatus('601', light601.status);
       } catch (e) {
         console.error('Status fetch error:', e);
+        ['caribbean', 'santorino', '601'].forEach(id => {
+          const el = document.getElementById(`status-${id}`);
+          el.textContent = 'ERR';
+          el.className = 'value error';
+        });
       }
     }
     
